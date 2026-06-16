@@ -39,12 +39,3 @@ jobs:
 
       - name: Generate and email report
         run: npm run crawl:email
-
-      - name: Upload report artifact
-        if: always()
-        uses: actions/upload-artifact@v5
-        with:
-          name: aliyun-coupon-report
-          path: output/
-          if-no-files-found: ignore
-          retention-days: 14

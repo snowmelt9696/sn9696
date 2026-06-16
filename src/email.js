@@ -1,5 +1,4 @@
 import { existsSync } from 'node:fs';
-import { basename } from 'node:path';
 import nodemailer from 'nodemailer';
 
 function pickEmailConfig(config) {
@@ -13,7 +12,6 @@ function pickEmailConfig(config) {
     to: process.env.QQ_MAIL_TO || email.to,
     fromName: process.env.QQ_MAIL_FROM_NAME || email.fromName || '阿里云账单报告',
     attachJson: String(process.env.QQ_MAIL_ATTACH_JSON ?? email.attachJson ?? 'false') === 'true',
-    detailPreviewLimit: Number(process.env.QQ_MAIL_DETAIL_PREVIEW_LIMIT || email.detailPreviewLimit || 10),
   };
 }
 
@@ -50,18 +48,6 @@ function summarizeCycles(details) {
   return cycles.map(formatCycle).join('、');
 }
 
-function formatDetailRows(details, limit) {
-  if (!details.length) {
-    return '本期暂无优惠券抵扣明细。';
-  }
-
-  return details.slice(0, limit).map((row, index) => {
-    const itemName = row.itemName || '未知计费项';
-    const amount = formatMoney(row.totalDeduct ?? row.couponDeduct);
-    return `${index + 1}. ${itemName}：¥${amount}`;
-  }).join('\n');
-}
-
 function formatCouponRows(coupons) {
   if (!coupons?.length) {
     return '暂无可用优惠券。';
@@ -90,7 +76,7 @@ function formatApiErrors(errors, limit = 3) {
   ].join('\n');
 }
 
-export async function sendCouponEmail({ config, result, csvPath, couponsPath, jsonPath }) {
+export async function sendCouponEmail({ config, result, jsonPath }) {
   const email = pickEmailConfig(config);
   if (!email.user || !email.authCode || !email.to) {
     throw new Error('邮件配置不完整：请设置 QQ_MAIL_USER、QQ_MAIL_AUTH_CODE、QQ_MAIL_TO 三个 GitHub Secrets。');
@@ -111,7 +97,6 @@ export async function sendCouponEmail({ config, result, csvPath, couponsPath, js
   const details = result.deductionDetails ?? [];
   const deductionTotal = formatMoney(summarizeDeductions(details));
   const cycleText = summarizeCycles(details);
-  const detailLimit = Math.min(details.length, email.detailPreviewLimit);
   const subject = `阿里云优惠券日报：余额 ¥${balance}，${cycleText}抵扣 ¥${deductionTotal}`;
   const text = [
     '阿里云优惠券日报',
@@ -126,22 +111,13 @@ export async function sendCouponEmail({ config, result, csvPath, couponsPath, js
     '可用优惠券',
     formatCouponRows(coupons),
     '',
-    `抵扣明细${detailLimit ? `（前 ${detailLimit} 条）` : ''}`,
-    formatDetailRows(details, email.detailPreviewLimit),
+    '完整数据保存在 JSON。',
     formatApiErrors(result.apiErrors),
-    '',
-    'CSV 附件包含完整数据。',
   ].filter((line) => line !== '').join('\n');
 
   const attachments = [];
-  if (csvPath && existsSync(csvPath)) {
-    attachments.push({ filename: basename(csvPath), path: csvPath });
-  }
-  if (couponsPath && existsSync(couponsPath)) {
-    attachments.push({ filename: basename(couponsPath), path: couponsPath });
-  }
   if (email.attachJson && jsonPath && existsSync(jsonPath)) {
-    attachments.push({ filename: basename(jsonPath), path: jsonPath });
+    attachments.push({ filename: 'aliyun-coupon-result.json', path: jsonPath });
   }
 
   await transporter.sendMail({

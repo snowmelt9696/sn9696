@@ -24,7 +24,6 @@ const defaultConfig = {
     port: 465,
     secure: true,
     attachJson: false,
-    detailPreviewLimit: 10,
   },
 };
 
@@ -212,19 +211,6 @@ async function callPaged(client, action, baseParams, pageSize) {
   return { results, errors };
 }
 
-function toCsv(rows) {
-  if (!rows.length) {
-    return '';
-  }
-
-  const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
-  const escape = (value) => {
-    const text = String(value ?? '');
-    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-  };
-  return [headers.join(','), ...rows.map((row) => headers.map((header) => escape(row[header])).join(','))].join('\n');
-}
-
 async function buildReport() {
   const config = loadConfig();
   const outputDir = resolve(rootDir, config.outputDir);
@@ -271,12 +257,8 @@ async function buildReport() {
   };
 
   const jsonPath = resolve(outputDir, 'aliyun-coupon-result.json');
-  const csvPath = resolve(outputDir, 'aliyun-coupon-deductions.csv');
-  const couponsPath = resolve(outputDir, 'aliyun-coupons.csv');
   writeFileSync(jsonPath, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
-  writeFileSync(csvPath, `\uFEFF${toCsv(deductionDetails)}`, 'utf8');
-  writeFileSync(couponsPath, `\uFEFF${toCsv(coupons)}`, 'utf8');
-  return { config, result, jsonPath, csvPath, couponsPath };
+  return { config, result, jsonPath };
 }
 
 export async function runOpenApiReport({ email = args.has('--email') } = {}) {
@@ -297,8 +279,6 @@ export async function runOpenApiReport({ email = args.has('--email') } = {}) {
     }
   }
   console.log(`JSON：${report.jsonPath}`);
-  console.log(`抵扣明细 CSV：${report.csvPath}`);
-  console.log(`优惠券 CSV：${report.couponsPath}`);
   return report;
 }
 

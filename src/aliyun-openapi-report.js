@@ -121,7 +121,7 @@ function simplifyInstance(instanceId) {
   const text = String(instanceId ?? '');
   const parts = text.split(';');
   if (parts.length >= 5) {
-    return `${parts[2]} ${parts[3]}`.trim();
+    return parts[2]?.trim() || undefined;
   }
   return text || undefined;
 }

@@ -24,7 +24,7 @@ const defaultConfig = {
     port: 465,
     secure: true,
     attachJson: false,
-    detailPreviewLimit: 20,
+    detailPreviewLimit: 10,
   },
 };
 
@@ -69,20 +69,18 @@ function toArray(value) {
   if (!value) {
     return [];
   }
-  if (Array.isArray(value)) {
-    return value;
-  }
-  return [value];
+  return Array.isArray(value) ? value : [value];
 }
 
 function deepValues(value) {
   if (!value || typeof value !== 'object') {
     return [];
   }
+
   const values = [];
   for (const item of Object.values(value)) {
     if (Array.isArray(item)) {
-      values.push(...item);
+      values.push(item);
     } else if (item && typeof item === 'object') {
       values.push(item, ...deepValues(item));
     }
@@ -91,8 +89,7 @@ function deepValues(value) {
 }
 
 function findFirstArray(response) {
-  const values = deepValues(response);
-  return values.find((value) => Array.isArray(value)) || [];
+  return deepValues(response).find((value) => Array.isArray(value)) || [];
 }
 
 function numeric(value) {
@@ -101,6 +98,10 @@ function numeric(value) {
   }
   const parsed = Number(String(value).replace(/,/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function roundAmount(value) {
+  return Number(numeric(value).toFixed(2));
 }
 
 function getField(object, names) {
@@ -114,6 +115,15 @@ function getField(object, names) {
 
 function compactObject(object) {
   return Object.fromEntries(Object.entries(object).filter(([, value]) => value !== undefined && value !== null && value !== ''));
+}
+
+function simplifyInstance(instanceId) {
+  const text = String(instanceId ?? '');
+  const parts = text.split(';').filter(Boolean);
+  if (parts.length >= 3) {
+    return `${parts[2]} ${parts[3] || ''}`.trim();
+  }
+  return text || undefined;
 }
 
 function monthCycles(count) {
@@ -132,15 +142,16 @@ function extractBalance(response) {
   if (amount === undefined) {
     return null;
   }
-  return { amount: numeric(amount), source: 'QueryAccountBalance', text: String(amount) };
+  return { amount: roundAmount(amount), source: 'QueryAccountBalance' };
 }
 
 function summarizeCouponBalance(coupons) {
-  const amount = coupons.reduce((total, coupon) => total + numeric(coupon.balance), 0);
   if (!coupons.length) {
     return null;
   }
-  return { amount: Number(amount.toFixed(2)), source: 'QueryCashCoupons', text: String(amount) };
+
+  const amount = coupons.reduce((total, coupon) => total + numeric(coupon.balance), 0);
+  return { amount: roundAmount(amount), source: 'QueryCashCoupons' };
 }
 
 function normalizeCoupons(response) {
@@ -148,18 +159,14 @@ function normalizeCoupons(response) {
     .concat(toArray(response.Data?.Coupons?.Coupon))
     .concat(toArray(response.Data?.Items?.Item))
     .concat(toArray(response.Data?.CashCoupon));
-  const items = rawItems.length ? rawItems : toArray(findFirstArray(response));
+  const items = rawItems.length ? rawItems : findFirstArray(response);
 
   return items.map((item) => compactObject({
-    couponNo: getField(item, ['CouponNo', 'CashCouponNo', 'CouponId', 'CashCouponId', 'Id']),
     name: getField(item, ['CouponName', 'Name', 'Description']),
     status: getField(item, ['Status', 'CouponStatus']),
-    balance: getField(item, ['Balance', 'AvailableAmount', 'RemainAmount', 'RemainingAmount']),
-    nominalValue: getField(item, ['NominalValue', 'Amount', 'FaceValue']),
-    applicableProducts: getField(item, ['ApplicableProducts']),
-    startTime: getField(item, ['StartTime', 'EffectiveTime']),
+    balance: roundAmount(getField(item, ['Balance', 'AvailableAmount', 'RemainAmount', 'RemainingAmount'])),
+    nominalValue: roundAmount(getField(item, ['NominalValue', 'Amount', 'FaceValue'])),
     expiryTime: getField(item, ['ExpiryTime', 'ExpiredTime', 'EndTime']),
-    raw: item,
   }));
 }
 
@@ -167,24 +174,21 @@ function normalizeDeductionDetails(response, billingCycle) {
   const rawItems = toArray(response.Data?.Items?.Item)
     .concat(toArray(response.Data?.BillingCycleData?.Items?.Item))
     .concat(toArray(response.Data?.InstanceBillList?.InstanceBill));
-  const items = rawItems.length ? rawItems : toArray(findFirstArray(response));
+  const items = rawItems.length ? rawItems : findFirstArray(response);
 
   return items.map((item) => {
     const couponDeduct = getField(item, ['DeductedByCoupons', 'CouponDeduct', 'CouponDeductAmount', 'DeductAmount', 'CashCouponDeduct', 'VoucherDeductAmount']);
     const cashCoupon = getField(item, ['CashCoupon', 'CashCouponAmount', 'CashCouponDeduct']);
     const totalDeduct = numeric(couponDeduct) + numeric(cashCoupon);
+    const instanceId = getField(item, ['InstanceID', 'InstanceId']);
+
     return compactObject({
       billingCycle,
       productName: getField(item, ['ProductName', 'ProductDetail', 'ProductCode']),
-      instanceId: getField(item, ['InstanceID', 'InstanceId']),
-      billAccountName: getField(item, ['BillAccountName', 'OwnerName']),
-      pretaxAmount: getField(item, ['PretaxAmount', 'PretaxGrossAmount']),
-      couponDeduct,
-      cashCoupon,
-      totalDeduct: totalDeduct || undefined,
-      usageStartTime: getField(item, ['UsageStartTime', 'BillingDate']),
-      usageEndTime: getField(item, ['UsageEndTime']),
-      raw: item,
+      itemName: simplifyInstance(instanceId) || getField(item, ['BillingItem', 'ProductDetail']),
+      couponDeduct: roundAmount(couponDeduct),
+      cashCoupon: cashCoupon === undefined ? undefined : roundAmount(cashCoupon),
+      totalDeduct: totalDeduct ? roundAmount(totalDeduct) : undefined,
     });
   }).filter((item) => numeric(item.totalDeduct) > 0 || numeric(item.couponDeduct) > 0 || numeric(item.cashCoupon) > 0);
 }
@@ -212,7 +216,8 @@ function toCsv(rows) {
   if (!rows.length) {
     return '';
   }
-  const headers = [...new Set(rows.flatMap((row) => Object.keys(row).filter((key) => key !== 'raw')))];
+
+  const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
   const escape = (value) => {
     const text = String(value ?? '');
     return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -234,11 +239,9 @@ async function buildReport() {
   });
 
   const apiErrors = [];
-  let balance = null;
-  let balanceResponse = null;
+  let accountBalance = null;
   try {
-    balanceResponse = await client.call('QueryAccountBalance');
-    balance = extractBalance(balanceResponse);
+    accountBalance = extractBalance(await client.call('QueryAccountBalance'));
   } catch (error) {
     apiErrors.push({ action: 'QueryAccountBalance', message: error.message, response: error.response });
   }
@@ -247,9 +250,7 @@ async function buildReport() {
   apiErrors.push(...couponCall.errors);
   const coupons = couponCall.results.flatMap(normalizeCoupons);
   const couponBalance = summarizeCouponBalance(coupons);
-  if (couponBalance) {
-    balance = couponBalance;
-  }
+  const balance = couponBalance ?? accountBalance;
 
   const deductionDetails = [];
   for (const billingCycle of monthCycles(config.aliyun.billingCycleMonths)) {
@@ -262,15 +263,11 @@ async function buildReport() {
     crawledAt: new Date().toISOString(),
     url: 'aliyun://BssOpenApi',
     balance,
-    accountBalance: balanceResponse ? extractBalance(balanceResponse) : null,
+    accountBalance,
     couponBalance,
     coupons,
     deductionDetails,
     apiErrors,
-    apiSamples: {
-      balanceResponse,
-      couponResponses: couponCall.results,
-    },
   };
 
   const jsonPath = resolve(outputDir, 'aliyun-coupon-result.json');
@@ -288,7 +285,7 @@ export async function runOpenApiReport({ email = args.has('--email') } = {}) {
     await sendCouponEmail(report);
     console.log('邮件已发送。');
   }
-  console.log(`账户余额：${report.result.balance?.amount ?? '未识别'}`);
+  console.log(`优惠券余额：${report.result.balance?.amount ?? '未识别'}`);
   console.log(`可用优惠券：${report.result.coupons.length} 条`);
   console.log(`抵扣明细：${report.result.deductionDetails.length} 条`);
   if (report.result.apiErrors.length) {

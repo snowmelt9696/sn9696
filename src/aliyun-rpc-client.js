@@ -36,7 +36,10 @@ function requestJson(url) {
       response.on('end', () => {
         try {
           const data = JSON.parse(body);
-          if (response.statusCode >= 400 || data.Code || data.Message?.includes('Error')) {
+          const successCodes = new Set(['200', 'Success', 'OK']);
+          const hasErrorCode = data.Code && !successCodes.has(String(data.Code));
+          const hasErrorMessage = typeof data.Message === 'string' && /error|failed|denied|forbidden/i.test(data.Message);
+          if (response.statusCode >= 400 || hasErrorCode || (!data.Success && hasErrorMessage)) {
             const error = new Error(data.Message || `Aliyun API HTTP ${response.statusCode}`);
             error.response = data;
             reject(error);

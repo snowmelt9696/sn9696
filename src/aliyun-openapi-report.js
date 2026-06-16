@@ -135,18 +135,28 @@ function extractBalance(response) {
   return { amount: numeric(amount), source: 'QueryAccountBalance', text: String(amount) };
 }
 
+function summarizeCouponBalance(coupons) {
+  const amount = coupons.reduce((total, coupon) => total + numeric(coupon.balance), 0);
+  if (!coupons.length) {
+    return null;
+  }
+  return { amount: Number(amount.toFixed(2)), source: 'QueryCashCoupons', text: String(amount) };
+}
+
 function normalizeCoupons(response) {
   const rawItems = toArray(response.Data?.CouponList?.Coupon)
     .concat(toArray(response.Data?.Coupons?.Coupon))
-    .concat(toArray(response.Data?.Items?.Item));
+    .concat(toArray(response.Data?.Items?.Item))
+    .concat(toArray(response.Data?.CashCoupon));
   const items = rawItems.length ? rawItems : toArray(findFirstArray(response));
 
   return items.map((item) => compactObject({
-    couponNo: getField(item, ['CouponNo', 'CouponId', 'Id']),
+    couponNo: getField(item, ['CouponNo', 'CashCouponNo', 'CouponId', 'CashCouponId', 'Id']),
     name: getField(item, ['CouponName', 'Name', 'Description']),
     status: getField(item, ['Status', 'CouponStatus']),
     balance: getField(item, ['Balance', 'AvailableAmount', 'RemainAmount', 'RemainingAmount']),
     nominalValue: getField(item, ['NominalValue', 'Amount', 'FaceValue']),
+    applicableProducts: getField(item, ['ApplicableProducts']),
     startTime: getField(item, ['StartTime', 'EffectiveTime']),
     expiryTime: getField(item, ['ExpiryTime', 'ExpiredTime', 'EndTime']),
     raw: item,
@@ -160,7 +170,7 @@ function normalizeDeductionDetails(response, billingCycle) {
   const items = rawItems.length ? rawItems : toArray(findFirstArray(response));
 
   return items.map((item) => {
-    const couponDeduct = getField(item, ['CouponDeduct', 'CouponDeductAmount', 'DeductAmount', 'CashCouponDeduct', 'VoucherDeductAmount']);
+    const couponDeduct = getField(item, ['DeductedByCoupons', 'CouponDeduct', 'CouponDeductAmount', 'DeductAmount', 'CashCouponDeduct', 'VoucherDeductAmount']);
     const cashCoupon = getField(item, ['CashCoupon', 'CashCouponAmount', 'CashCouponDeduct']);
     const totalDeduct = numeric(couponDeduct) + numeric(cashCoupon);
     return compactObject({
@@ -236,6 +246,10 @@ async function buildReport() {
   const couponCall = await callPaged(client, 'QueryCashCoupons', { Status: process.env.ALIYUN_COUPON_STATUS || 'Available' }, config.aliyun.pageSize);
   apiErrors.push(...couponCall.errors);
   const coupons = couponCall.results.flatMap(normalizeCoupons);
+  const couponBalance = summarizeCouponBalance(coupons);
+  if (couponBalance) {
+    balance = couponBalance;
+  }
 
   const deductionDetails = [];
   for (const billingCycle of monthCycles(config.aliyun.billingCycleMonths)) {
@@ -248,6 +262,8 @@ async function buildReport() {
     crawledAt: new Date().toISOString(),
     url: 'aliyun://BssOpenApi',
     balance,
+    accountBalance: balanceResponse ? extractBalance(balanceResponse) : null,
+    couponBalance,
     coupons,
     deductionDetails,
     apiErrors,

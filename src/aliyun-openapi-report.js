@@ -119,9 +119,9 @@ function compactObject(object) {
 
 function simplifyInstance(instanceId) {
   const text = String(instanceId ?? '');
-  const parts = text.split(';').filter(Boolean);
-  if (parts.length >= 3) {
-    return `${parts[2]} ${parts[3] || ''}`.trim();
+  const parts = text.split(';');
+  if (parts.length >= 5) {
+    return `${parts[2]} ${parts[3]}`.trim();
   }
   return text || undefined;
 }
@@ -274,8 +274,8 @@ async function buildReport() {
   const csvPath = resolve(outputDir, 'aliyun-coupon-deductions.csv');
   const couponsPath = resolve(outputDir, 'aliyun-coupons.csv');
   writeFileSync(jsonPath, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
-  writeFileSync(csvPath, toCsv(deductionDetails), 'utf8');
-  writeFileSync(couponsPath, toCsv(coupons), 'utf8');
+  writeFileSync(csvPath, `\uFEFF${toCsv(deductionDetails)}`, 'utf8');
+  writeFileSync(couponsPath, `\uFEFF${toCsv(coupons)}`, 'utf8');
   return { config, result, jsonPath, csvPath, couponsPath };
 }
 

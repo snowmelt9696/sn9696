@@ -30,17 +30,24 @@ function formatDateTime(value) {
   }).format(new Date(value));
 }
 
-function simplifyInstance(instanceId) {
-  const text = String(instanceId ?? '');
-  const parts = text.split(';').filter(Boolean);
-  if (parts.length >= 3) {
-    return `${parts[2]} ${parts[3] || ''}`.trim();
+function formatCycle(value) {
+  if (!value) {
+    return '本期';
   }
-  return text || '未命名计费项';
+  const [year, month] = String(value).split('-');
+  return year && month ? `${year}年${Number(month)}月` : String(value);
 }
 
 function summarizeDeductions(details) {
   return details.reduce((total, row) => total + Number(row.totalDeduct ?? row.couponDeduct ?? 0), 0);
+}
+
+function summarizeCycles(details) {
+  const cycles = [...new Set(details.map((row) => row.billingCycle).filter(Boolean))];
+  if (!cycles.length) {
+    return '本期';
+  }
+  return cycles.map(formatCycle).join('、');
 }
 
 function formatDetailRows(details, limit) {
@@ -49,9 +56,9 @@ function formatDetailRows(details, limit) {
   }
 
   return details.slice(0, limit).map((row, index) => {
-    const itemName = simplifyInstance(row.instanceId || row.billingItem || row.productDetail);
+    const itemName = row.itemName || '未知计费项';
     const amount = formatMoney(row.totalDeduct ?? row.couponDeduct);
-    return `${index + 1}. ${row.productName || '未知产品'} / ${itemName}：抵扣 ¥${amount}`;
+    return `${index + 1}. ${itemName}：¥${amount}`;
   }).join('\n');
 }
 
@@ -64,7 +71,7 @@ function formatCouponRows(coupons) {
     const name = coupon.name || '未命名优惠券';
     const balance = formatMoney(coupon.balance);
     const expiry = coupon.expiryTime ? coupon.expiryTime.slice(0, 10) : '无到期时间';
-    return `${index + 1}. ${name}：剩余 ¥${balance}，到期 ${expiry}`;
+    return `${index + 1}. ${name}\n   剩余 ¥${balance}，到期 ${expiry}`;
   }).join('\n');
 }
 
@@ -103,25 +110,27 @@ export async function sendCouponEmail({ config, result, csvPath, couponsPath, js
   const coupons = result.coupons ?? [];
   const details = result.deductionDetails ?? [];
   const deductionTotal = formatMoney(summarizeDeductions(details));
+  const cycleText = summarizeCycles(details);
   const detailLimit = Math.min(details.length, email.detailPreviewLimit);
-  const subject = `阿里云优惠券日报：余额 ¥${balance}，本期抵扣 ¥${deductionTotal}`;
+  const subject = `阿里云优惠券日报：余额 ¥${balance}，${cycleText}抵扣 ¥${deductionTotal}`;
   const text = [
-    `阿里云优惠券日报`,
-    `时间：${formatDateTime(result.crawledAt)}`,
+    '阿里云优惠券日报',
+    `生成时间：${formatDateTime(result.crawledAt)}`,
+    `统计周期：${cycleText}`,
     '',
     `优惠券余额：¥${balance}`,
     `可用优惠券：${coupons.length} 张`,
-    `本期抵扣：¥${deductionTotal}`,
+    `${cycleText}抵扣：¥${deductionTotal}`,
     `抵扣条目：${details.length} 条`,
     '',
-    '可用优惠券：',
+    '可用优惠券',
     formatCouponRows(coupons),
     '',
-    `抵扣明细${detailLimit ? `（前 ${detailLimit} 条）` : ''}：`,
+    `抵扣明细${detailLimit ? `（前 ${detailLimit} 条）` : ''}`,
     formatDetailRows(details, email.detailPreviewLimit),
     formatApiErrors(result.apiErrors),
     '',
-    'CSV 附件包含完整优惠券和抵扣明细。',
+    'CSV 附件包含完整数据。',
   ].filter((line) => line !== '').join('\n');
 
   const attachments = [];

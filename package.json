@@ -1,0 +1,14 @@
+{
+  "name": "aliyun-coupon-crawler",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GitHub Actions report for Aliyun balance, coupons, and deduction details.",
+  "type": "module",
+  "scripts": {
+    "crawl": "node src/aliyun-openapi-report.js",
+    "crawl:email": "node src/aliyun-openapi-report.js --email"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.16"
+  }
+}

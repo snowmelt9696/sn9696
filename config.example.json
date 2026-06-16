@@ -1,0 +1,22 @@
+{
+  "outputDir": "output",
+  "aliyun": {
+    "endpoint": "business.aliyuncs.com",
+    "version": "2017-12-14",
+    "regionId": "cn-hangzhou",
+    "currency": "CNY",
+    "billingCycleMonths": 2,
+    "pageSize": 300
+  },
+  "email": {
+    "host": "smtp.qq.com",
+    "port": 465,
+    "secure": true,
+    "user": "your_qq_number@qq.com",
+    "authCode": "your_qq_mail_smtp_auth_code",
+    "to": "receiver@qq.com",
+    "fromName": "阿里云账单报告",
+    "attachJson": false,
+    "detailPreviewLimit": 20
+  }
+}

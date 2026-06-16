@@ -277,6 +277,11 @@ export async function runOpenApiReport({ email = args.has('--email') } = {}) {
   console.log(`抵扣明细：${report.result.deductionDetails.length} 条`);
   if (report.result.apiErrors.length) {
     console.log(`API 警告：${report.result.apiErrors.length} 条，详见 JSON。`);
+    for (const error of report.result.apiErrors) {
+      const code = error.response?.Code ? ` code=${error.response.Code}` : '';
+      const remoteMessage = error.response?.Message ? ` remote=${error.response.Message}` : '';
+      console.log(`- ${error.action}: ${error.message}${code}${remoteMessage}`);
+    }
   }
   console.log(`JSON：${report.jsonPath}`);
   console.log(`抵扣明细 CSV：${report.csvPath}`);

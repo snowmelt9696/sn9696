@@ -36,6 +36,22 @@ function formatDetailRows(details, limit) {
   }).join('\n');
 }
 
+function formatApiErrors(errors, limit = 4) {
+  if (!errors?.length) {
+    return '无。';
+  }
+
+  return errors.slice(0, limit).map((error, index) => {
+    const parts = [
+      `${index + 1}. ${error.action || 'UnknownAction'}`,
+      error.message ? `msg=${error.message}` : null,
+      error.response?.Code ? `code=${error.response.Code}` : null,
+      error.response?.Message ? `remote=${error.response.Message}` : null,
+    ].filter(Boolean);
+    return parts.join(' | ');
+  }).join('\n');
+}
+
 export async function sendCouponEmail({ config, result, csvPath, couponsPath, jsonPath }) {
   const email = pickEmailConfig(config);
   if (!email.user || !email.authCode || !email.to) {
@@ -56,7 +72,8 @@ export async function sendCouponEmail({ config, result, csvPath, couponsPath, js
   const couponCount = result.coupons?.length ?? 0;
   const detailsCount = result.deductionDetails.length;
   const previewRows = formatDetailRows(result.deductionDetails, email.detailPreviewLimit);
-  const warningText = result.apiErrors?.length ? `\nAPI 警告：${result.apiErrors.length} 条，详见附件 JSON 或 Actions 日志。` : '';
+  const errorPreview = formatApiErrors(result.apiErrors);
+  const warningText = result.apiErrors?.length ? `API 警告：${result.apiErrors.length} 条` : 'API 警告：无';
   const subject = `阿里云余额 ${balanceText}，优惠券 ${couponCount} 张`;
   const text = [
     `抓取时间：${result.crawledAt}`,
@@ -66,11 +83,14 @@ export async function sendCouponEmail({ config, result, csvPath, couponsPath, js
     `抵扣明细：${detailsCount} 条`,
     warningText,
     '',
+    'API 错误摘要：',
+    errorPreview,
+    '',
     `前 ${Math.min(detailsCount, email.detailPreviewLimit)} 条抵扣明细：`,
     previewRows,
     '',
-    '完整优惠券与抵扣明细见附件 CSV。',
-  ].filter(Boolean).join('\n');
+    '完整优惠券、抵扣明细和原始错误见附件 JSON。',
+  ].join('\n');
 
   const attachments = [];
   if (csvPath && existsSync(csvPath)) {
